@@ -1,0 +1,46 @@
+extends CanvasLayer
+
+var http_request_obj = null  # 声明为类变量
+var http_request_mtl = null  # 声明为类变量
+
+func _ready():
+	# 创建两个 HTTPRequest 节点并保存引用
+	http_request_obj = HTTPRequest.new()
+	http_request_mtl = HTTPRequest.new()
+	add_child(http_request_obj)
+	add_child(http_request_mtl)
+	$下载按钮.connect("pressed", self, "_on_下载按钮_pressed")
+	
+	# 分别连接信号
+	http_request_obj.connect("request_completed", self, "_on_OBJ请求完成")
+	http_request_mtl.connect("request_completed", self, "_on_MTL请求完成")
+
+func _on_下载按钮_pressed():
+	var id = "sofa_001"
+	
+	# 使用保存的节点引用而非静态路径
+	var url_obj = "http://172.31.233.146:15005/?id=" + id + "&type=model"
+	http_request_obj.request(url_obj)  # 修改此处
+	
+	var url_mtl = "http://172.31.233.146:15005/?id=" + id + "&type=mtl"
+	http_request_mtl.request(url_mtl)  # 修改此处
+
+func _on_OBJ请求完成(result, _response_code, _headers, body):
+	save_file("sofa_001", "model", body)
+
+func _on_MTL请求完成(result, _response_code, _headers, body):
+	save_file("sofa_001", "mtl", body)
+
+func save_file(id, type, body):
+	# 保持原有代码不变
+	var file_extension = "obj" if type == "model" else "mtl"
+	var file_name = id + "." + file_extension
+	
+	var file = File.new()
+	if file.open(file_name, File.WRITE) != OK:
+		print("无法保存文件：" + file_name)
+		return
+	
+	file.store_buffer(body)
+	file.close()
+	print("文件下载成功：" + file_name)

@@ -1,0 +1,29 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=4
+gdi_version="7.1.0-R"
+
+_global_script_classes=[ {
+"base": "RigidBody",
+"class": "ThirdPersonPlayer",
+"language": "IVRScript",
+"path": "res://DefaultRes/player.is"
+} ]
+_global_script_class_icons={
+"ThirdPersonPlayer": "EditorIcons://GdiThirdPersonCamera"
+}
+
+[application]
+
+config/name="IdeaXR-LayoutProject"
+config/icon="res://DefaultRes/icon.png"
+
+[rendering]
+
+environment/default_environment="res://DefaultRes/default_env.resource"

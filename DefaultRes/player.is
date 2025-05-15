@@ -1,0 +1,241 @@
+"""
+功能模块：第三人称相机
+脚本作用：该脚本主要为第三人称相机的功能脚本，实现了人物的走、跑、跳、视角旋转、人物模型切换等操作。
+参与人：张昊卓
+最后改动日期：2022.10.26
+"""
+tool
+extends RigidBody
+
+class_name ThirdPersonPlayer, "EditorIcons://GdiThirdPersonCamera"
+
+export(NodePath) var person setget set_node
+const MOUSE_SENSITIVITY = 0.3
+const JUMP_STRENGTH = 0.1
+const VIEW_SPEED = 7
+const MIN_AIRBORNE_TIME = 0.2
+export(float,1,20)var walk_speed = 3
+export(float,1,20)var run_speed = 5
+export var current = false setget set_camera_current
+var max_slope_angle = 60.0 
+var max_steps_height = 0.3 
+const GRAVITY = 12.5
+const P_CAMERA = "射线检测/Rotate_helper/SpringArm/Camera"
+
+var direction = Vector3.ZERO
+var view_direction = Vector3.ZERO
+var direction_input
+var yaw = 0.0
+var pitch = 0.0
+var can_control = true
+var root_motion = Transform()
+var start = false
+var jump_speed = Vector3.ZERO
+var model 
+var time = 0
+var node = NodePath("商务男") 
+var reset = false
+var velocity = Vector3.ZERO
+var stop_on_slope = true
+var airborne_time = 0
+var is_on_floor = true 
+
+# Called when the node enters the scene tree for the first time.
+func _ready():
+	# warnings-disable
+	connect("visibility_changed", self, "_on_visibility_changed") 
+	set_node(person)
+	if !Engine.is_editor_hint():
+		if person and person != node:
+			model = get_node(person)
+		else:
+			model = get_node(node)
+		$AnimationTree.active = true
+		view_direction = $射线检测/Rotate_helper.global_transform.basis.z
+
+func set_camera_current(value):
+	current = value
+	if not Engine.editor_hint:
+		get_node(P_CAMERA).current = current
+	
+func set_node(path):
+	if person != null:
+		if get_node_or_null(person):
+			get_node(person).hide()
+	
+	person = path
+	
+	if get_node_or_null(person) and person != node:
+		get_node(person).show()
+		if get_node_or_null(node):
+			get_node(node).hide()
+	elif get_node_or_null(node):
+		get_node(node).show()
+	
+	if has_node("AnimationTree"):
+		if person == "":
+			$AnimationTree.anim_player = NodePath("../" + str(node) + "/动画播放器")
+		else:
+			$AnimationTree.anim_player = NodePath("../" + str(person) + "/动画播放器")
+	
+func _input(event):
+	if !get_node(P_CAMERA).current:
+			return
+	# 按下鼠标右键旋转视角
+	if event is InputEventMouseMotion and Input.is_mouse_button_pressed(2):
+		yaw = fmod(yaw - event.relative.x * MOUSE_SENSITIVITY,360)
+		pitch = clamp(pitch - event.relative.y * MOUSE_SENSITIVITY,-50,70)
+		$射线检测/Rotate_helper.rotation_degrees = Vector3(pitch ,yaw ,0)
+		var val = event.relative.x
+	# 方向键旋转视角
+	if Input.is_action_pressed("ui_up"):
+		yaw = fmod(yaw, 360)
+		pitch = clamp(pitch - 1 * MOUSE_SENSITIVITY,-50,70)
+		$射线检测/Rotate_helper.rotation_degrees = Vector3(pitch ,yaw ,0)
+		
+	if Input.is_action_pressed("ui_down"):
+		yaw = fmod(yaw, 360)
+		pitch = clamp(pitch + 1 * MOUSE_SENSITIVITY,-50,70)
+		$射线检测/Rotate_helper.rotation_degrees = Vector3(pitch ,yaw ,0)
+		
+	if Input.is_action_pressed("ui_left"):
+		yaw = fmod(yaw - 1 * MOUSE_SENSITIVITY,360)
+		pitch = clamp(pitch ,-50,70)
+		$射线检测/Rotate_helper.rotation_degrees = Vector3(pitch ,yaw ,0)
+	
+	if Input.is_action_pressed("ui_right"):
+		yaw = fmod(yaw + 1 * MOUSE_SENSITIVITY,360)
+		pitch = clamp(pitch ,-50,70)
+		$射线检测/Rotate_helper.rotation_degrees = Vector3(pitch ,yaw ,0)
+	
+	
+func _physics_process(delta):
+	if person and person != node:
+		get_node(node).hide()
+	if !Engine.is_editor_hint():
+		var camera = get_node(P_CAMERA)
+		if !camera.current:
+			# warning-disable
+			if current:
+				current = false
+			if is_on_floor:
+				velocity = Vector3.ZERO
+				$AnimationTree.set("parameters/state/current",0)
+				return
+		else:
+			current = true
+		
+		direction = Vector3.ZERO
+		direction_input = Vector2.ZERO
+		# 计算移动朝向
+		if check_collision() and current:
+			direction_input.y -= Input.get_action_strength("move_backward", true) - Input.get_action_strength("move_forward", true)
+			direction_input.x -= Input.get_action_strength("move_left", true) - Input.get_action_strength("move_right", true)
+			direction -= $射线检测/Rotate_helper.global_transform.basis.z * direction_input.y - $射线检测/Rotate_helper.global_transform.basis.x * direction_input.x
+			direction.y = 0.0
+				
+		# 跳跃
+		if Input.is_action_just_pressed("jump", true) and check_collision() and current :
+			is_on_floor = false
+			start = true
+			can_control = false
+			view_direction = direction
+			jump_speed =  direction.normalized() * JUMP_STRENGTH
+			$AnimationTree.set("parameters/state/current",3)
+			#$Model.global_transform.basis = $Model.global_transform.looking_at(global_transform.origin - view_direction * 2.0, Vector3.UP).basis
+			$AnimationTree.set("parameters/jump_up/active",true)
+			#$AnimationTree.set("parameters/state/current",3)
+			linear_velocity.y = 15
+					
+			if not stop_on_slope:
+				jump_speed.x = 0.0
+				jump_speed.z = 0.0
+				velocity.x = 0.0
+				velocity.z = 0.0
+				direction = Vector3.ZERO
+				view_direction = Vector3.ZERO
+			
+	#	if can_control:
+	#		$Model/AnimationTree.set("parameters/jump/active",true)
+		# 移动
+		if direction != Vector3.ZERO:
+			view_direction = lerp(view_direction,direction,delta * VIEW_SPEED)
+			if Input.is_action_pressed("run") and current:
+				linear_velocity = lerp(linear_velocity,view_direction.normalized() * (run_speed * int(Input.is_action_pressed("run", true))),delta * VIEW_SPEED)
+			else:
+				linear_velocity = lerp(linear_velocity,view_direction.normalized() * walk_speed ,delta * VIEW_SPEED)
+			model.global_transform.basis = model.global_transform.basis.slerp(model.global_transform.looking_at(global_transform.origin - view_direction * 2.0,Vector3.UP).basis,delta * VIEW_SPEED)
+		else:
+			linear_velocity = lerp(linear_velocity,direction,delta * 5.0)
+		#print(linear_velocity)	
+	#	if linear_velocity.y > 0:
+	#		linear_velocity.y -= GRAVITY * delta
+		#linear_velocity.y = clamp(linear_velocity.y,-GRAVITY,GRAVITY)
+		# 累计滞空时间
+		if !check_collision():
+			airborne_time += delta
+		else:
+			airborne_time = 0
+		linear_velocity += jump_speed
+		# 人物模型转向
+		$射线检测/Rotate_helper/SpringArm/Camera.transform = $射线检测/Rotate_helper/SpringArm/Camera.transform.looking_at(Vector3.ZERO,Vector3.UP)		
+		if $射线检测/RayCast.is_colliding() or $射线检测/RayCast3.is_colliding() or $射线检测/RayCast4.is_colliding() or $射线检测/RayCast5.is_colliding() or $射线检测/RayCast7.is_colliding() or $射线检测/moving_ray.is_colliding() and Input.is_action_pressed("move_forward", true):
+			$AnimationTree.set("parameters/state/current",int(direction_input.length() > 0.0))
+			if Input.is_action_pressed("run", true) and direction and current:
+				$AnimationTree.set("parameters/state/current",2)
+		else:
+			if !$射线检测/RayCast6.is_colliding() and !start:
+				if $射线检测/moving_ray.is_colliding():
+					self.global_transform.origin += -($射线检测/moving_ray.get_collision_point() * Vector3(0, 0, 1) * delta)
+				if airborne_time > MIN_AIRBORNE_TIME:
+					$AnimationTree.set("parameters/state/current",3)
+					can_control = false
+			if start:
+				$AnimationTree.set("parameters/state/current",3)
+				can_control = false
+			linear_velocity.y -= GRAVITY * delta * 2
+		
+		if check_collision() and direction == Vector3.ZERO:
+			move_on_slope(delta)
+		
+		if $射线检测/RayCast2.is_colliding() and !can_control and linear_velocity.y < 0 :
+			is_on_floor = true
+			start = false
+			jump_end()
+	
+func jump_end():
+#	linear_velocity = Vector3.ZERO
+	jump_speed = Vector3.ZERO
+	can_control = true
+
+func move_on_slope(delta):
+	# 防止人物下滑的算法
+	var ray_casts = [$射线检测/RayCast, $射线检测/RayCast3, $射线检测/RayCast4, $射线检测/RayCast5,$射线检测/RayCast7]
+	for ray_cast in ray_casts:
+		if ray_cast.is_colliding():
+			var normal = ray_cast.get_collision_normal()
+			var length = normal.length()
+			if length > 0:
+				var angle = rad2deg(acos(normal.y / length))
+				if(angle < max_slope_angle and (not start)):
+					linear_velocity.y = 10.0 * delta
+					stop_on_slope = true
+					if $射线检测/RayCast6.is_colliding():
+						var collision_y = $射线检测/RayCast6.get_collision_point().y
+						global_transform.origin.y = collision_y
+				else:
+					stop_on_slope = false
+				break
+
+func check_collision():
+	# 检测碰撞，当以下射线全部碰到地面时视为在地面上
+	var ray_casts = [$射线检测/RayCast, $射线检测/RayCast3, $射线检测/RayCast4, $射线检测/RayCast5,$射线检测/RayCast7]
+	for ray_cast in ray_casts:
+		if ray_cast.is_colliding():
+			return true
+	return false
+
+func _on_visibility_changed():
+	# 该节点隐藏时同时禁用该节点下的相机的渲染
+	if not Engine.editor_hint:
+		set_camera_current(visible) 
